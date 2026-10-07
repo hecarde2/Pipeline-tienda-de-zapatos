@@ -77,7 +77,9 @@ ventanas. Borrarlo haría que el streaming releyera desde
 ## `data/lake/_metadata/` — manifiestos
 
 Metadatos de ingesta (por ejemplo, qué archivos históricos se copiaron y
-cuándo).
+cuándo) y **`runs.json`**: historial de las últimas 50 ejecuciones del batch
+(inicio, fin, duración, estado y filas por capa), que se muestra en la página
+*Inicio* del dashboard.
 
 ## Tamaño y limpieza
 

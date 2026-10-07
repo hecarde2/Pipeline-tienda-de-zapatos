@@ -113,7 +113,10 @@ Pipeline-tienda-de-zapatos/
 │   ├── batch.py              # orquestador Bronze -> Silver -> Gold
 │   ├── events.py             # productor de eventos a Kafka (simulador web)
 │   └── streaming.py          # Kafka -> Bronze + Gold (Structured Streaming)
-├── dashboard/app.py          # panel Streamlit
+├── dashboard/
+│   ├── app.py                # página de inicio: KPIs, ventas y ejecuciones del batch
+│   ├── lib.py                # estilo blanco hueso, carga Gold, filtros y export CSV
+│   └── pages/                # Ventas · Producto · Clientes · Streaming
 ├── db/init/01_schema.sql     # esquema transaccional (initdb)
 └── data/                     # generado en runtime
     ├── raw/                  # archivos crudos (CSV, JSON, JSON Lines)
@@ -122,7 +125,7 @@ Pipeline-tienda-de-zapatos/
         ├── silver/           # limpio (+ silver/rechazados/)
         ├── gold/             # métricas
         ├── _checkpoints/     # checkpoints de Spark Streaming
-        └── _metadata/        # manifiestos
+        └── _metadata/        # manifiestos y runs.json (ejecuciones del batch)
 ```
 
 ---
@@ -309,17 +312,21 @@ docker compose --profile tools run --rm batch   # incorporar eventos a Silver/Go
 
 ## 📊 Dashboard
 
-`http://localhost:8501` — Streamlit leyendo solo de `lake/gold/` (Parquet → pandas):
+`http://localhost:8501` — Streamlit leyendo solo de `lake/gold/` (Parquet → pandas),
+con **5 páginas** (menú lateral):
 
-- KPIs: ingresos, unidades, días con ventas, producto estrella, stock crítico.
-- Serie diaria de ingresos y unidades + ingresos por mes.
-- Top productos, ingresos por categoría, demanda por talla y color.
-- Embudo de conversión con tasas y carritos abandonados por producto.
-- Stock crítico, tasa de devolución por producto y clientes más valiosos.
-- Actividad del streaming y alertas de stock en vivo.
+| Página | Contenido |
+|---|---|
+| **Inicio** | KPIs globales, evolución de ventas con filtro de fechas, top 5 y **últimas ejecuciones del batch** |
+| **Ventas** | Serie diaria y mensual (filtro de fechas) + embudo de conversión |
+| **Producto** | Top productos con filtro de marca/categoría, tallas y colores, stock crítico y devoluciones |
+| **Clientes** | Clientes más valiosos con filtro por segmento y carritos abandonados |
+| **Streaming** | Actividad del stream y alertas de stock con severidad |
 
-Se actualiza solo cada 30 s (`AUTO_REFRESH=0` para desactivarlo,
-`REFRESH_SECONDS` para cambiarlo) y tiene botón de actualización manual.
+Todas las tablas tienen botón **Descargar CSV** y la cabecera se actualiza sola
+cada 30 s (`AUTO_REFRESH=0` lo desactiva, `REFRESH_SECONDS` cambia la cadencia).
+Cada ejecución del batch queda registrada en `lake/_metadata/runs.json`
+(inicio, duración, estado y filas por capa) y se muestra en la página Inicio.
 
 ---
 

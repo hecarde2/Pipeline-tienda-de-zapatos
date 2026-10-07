@@ -99,6 +99,11 @@ Orquestador del pipeline batch: valida que exista `data/raw`, ingiere a
 Bronze, transforma a Silver y calcula Gold. Es idempotente (se puede reejecutar
 sin efectos secundarios). Se ejecuta con `python -m app.batch`.
 
+Cada ejecución deja un registro en **`lake/_metadata/runs.json`** (las últimas
+50): hora de inicio y fin, duración, estado (`ok`/`error`, con mensaje de
+error si falla) y filas procesadas por capa (Bronze, detalle de Silver y de
+Gold). La página *Inicio* del dashboard lo muestra como tabla.
+
 ### `events.py`
 Simulador de tráfico web publicado a Kafka con `confluent-kafka`:
 
