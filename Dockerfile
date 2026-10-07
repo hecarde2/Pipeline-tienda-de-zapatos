@@ -36,6 +36,8 @@ RUN mkdir -p /opt/spark-jars && cd /opt/spark-jars \
 COPY app ./app
 COPY dashboard ./dashboard
 COPY db ./db
+# Tema de Streamlit (blanco hueso) para el dashboard
+COPY streamlit-config.toml /app/.streamlit/config.toml
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 

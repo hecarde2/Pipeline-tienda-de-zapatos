@@ -1,0 +1,14 @@
+# Tema de Streamlit: blanco hueso + acento cobre.
+# Se copia a /app/.streamlit/config.toml en la imagen (ver Dockerfile).
+
+[theme]
+base = "light"
+primaryColor = "#B45309"
+backgroundColor = "#F6F3EC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1C1917"
+font = "sans serif"
+borderColor = "#E6E0D2"
+baseRadius = "12px"
+chartCategoricalColors = ["#B45309", "#0F766E", "#78716C", "#B91C1C", "#D97706", "#2563EB"]
+chartContinuousColors = ["#FEF3C7", "#EAB308", "#B45309"]

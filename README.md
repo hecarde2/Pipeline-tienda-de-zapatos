@@ -13,16 +13,33 @@ con **Apache Spark**, combinando **batch** (PostgreSQL + archivos históricos) y
 1. [Arquitectura](#-arquitectura)
 2. [Tecnologías](#-tecnologías)
 3. [Estructura del proyecto](#-estructura-del-proyecto)
-4. [Requisitos](#-requisitos)
-5. [Arranque rápido](#-arranque-rápido)
-6. [Qué hace cada servicio](#-qué-hace-cada-servicio)
-7. [Las tres capas del lake](#-las-tres-capas-del-lake)
-8. [Streaming y eventos](#-streaming-y-eventos)
-9. [Dashboard](#-dashboard)
-10. [Configuración (variables de entorno)](#-configuración-variables-de-entorno)
-11. [Comandos útiles](#-comandos-útiles)
-12. [Diseño y decisiones](#-diseño-y-decisiones)
-13. [Problemas frecuentes](#-problemas-frecuentes)
+4. [Documentación por carpetas](#-documentación-por-carpetas)
+5. [Requisitos](#-requisitos)
+6. [Arranque rápido](#-arranque-rápido)
+7. [Qué hace cada servicio](#-qué-hace-cada-servicio)
+8. [Las tres capas del lake](#-las-tres-capas-del-lake)
+9. [Streaming y eventos](#-streaming-y-eventos)
+10. [Dashboard](#-dashboard)
+11. [Configuración (variables de entorno)](#-configuración-variables-de-entorno)
+12. [Comandos útiles](#-comandos-útiles)
+13. [Diseño y decisiones](#-diseño-y-decisiones)
+14. [Problemas frecuentes](#-problemas-frecuentes)
+
+---
+
+## 📚 Documentación por carpetas
+
+La carpeta [`docs/`](docs/) documenta qué hace cada carpeta y archivo del
+proyecto:
+
+| Documento | Cubre |
+|---|---|
+| [docs/README.md](docs/README.md) | Índice y mapa general |
+| [docs/raiz.md](docs/raiz.md) | Raíz: `start`, `stop`, `Dockerfile`, `docker-compose.yml`, configs |
+| [docs/app.md](docs/app.md) | `app/` — seed, bronze, silver, gold, batch, events, streaming |
+| [docs/dashboard.md](docs/dashboard.md) | `dashboard/` — panel Streamlit y su diseño |
+| [docs/db.md](docs/db.md) | `db/` — esquema de PostgreSQL |
+| [docs/data.md](docs/data.md) | `data/` — archivos crudos y data lake |
 
 ---
 
