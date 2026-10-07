@@ -16,14 +16,15 @@ con **Apache Spark**, combinando **batch** (PostgreSQL + archivos históricos) y
 4. [Documentación por carpetas](#-documentación-por-carpetas)
 5. [Requisitos](#-requisitos)
 6. [Arranque rápido](#-arranque-rápido)
-7. [Qué hace cada servicio](#-qué-hace-cada-servicio)
-8. [Las tres capas del lake](#-las-tres-capas-del-lake)
-9. [Streaming y eventos](#-streaming-y-eventos)
-10. [Dashboard](#-dashboard)
-11. [Configuración (variables de entorno)](#-configuración-variables-de-entorno)
-12. [Comandos útiles](#-comandos-útiles)
-13. [Diseño y decisiones](#-diseño-y-decisiones)
-14. [Problemas frecuentes](#-problemas-frecuentes)
+7. [Datos de conexión (Docker)](#-datos-de-conexión-docker)
+8. [Qué hace cada servicio](#-qué-hace-cada-servicio)
+9. [Las tres capas del lake](#-las-tres-capas-del-lake)
+10. [Streaming y eventos](#-streaming-y-eventos)
+11. [Dashboard](#-dashboard)
+12. [Configuración (variables de entorno)](#-configuración-variables-de-entorno)
+13. [Comandos útiles](#-comandos-útiles)
+14. [Diseño y decisiones](#-diseño-y-decisiones)
+15. [Problemas frecuentes](#-problemas-frecuentes)
 
 ---
 
@@ -167,6 +168,52 @@ Opciones:
 ./stop --volumes    # además borra el volumen de PostgreSQL
 ./stop --purge      # además borra data/raw y data/lake
 ```
+
+---
+
+## 🐳 Datos de conexión (Docker)
+
+Credenciales y puertos de los servicios que corren en Docker, para
+conectarte desde fuera (DBeaver, pgAdmin, navegadores, clientes Kafka…):
+
+### PostgreSQL
+
+| Parámetro | Valor |
+|---|---|
+| Motor | **PostgreSQL 16** (no MySQL) |
+| Host | `localhost` |
+| **Puerto** | **`5433`** |
+| Base de datos | `tienda` |
+| Usuario | `tienda` |
+| Contraseña | `tienda123` |
+| Contenedor | `tienda-zapatos-postgres-1` |
+
+> ⚠️ El puerto `5432` de tu equipo puede estar ocupado por **otro** PostgreSQL
+> local: si el cliente dice *password authentication failed*, revisa que
+> estés usando el **5433**.
+
+Conexión desde consola:
+
+```bash
+# psql dentro del contenedor
+docker compose exec postgres psql -U tienda -d tienda
+
+# o desde el host (si tienes psql instalado)
+PGPASSWORD=tienda123 psql -h localhost -p 5433 -U tienda -d tienda
+```
+
+En DBeaver: *New Connection* → **PostgreSQL** → Host `localhost`, Port
+`5433`, Database `tienda`, User `tienda`, Password `tienda123`.
+
+### Resto de servicios
+
+| Servicio | Dirección | Uso |
+|---|---|---|
+| Dashboard | http://localhost:8501 | Streamlit |
+| Spark UI | http://localhost:4040 | UI del streaming |
+| Kafka (externo) | `localhost:29092` | Productor/consumidor fuera de Docker (topic `eventos-web`) |
+| Kafka (interno) | `kafka:9092` | Solo entre contenedores |
+| PostgreSQL (interno) | `postgres:5432` | Solo entre contenedores |
 
 ---
 
