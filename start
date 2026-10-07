@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# Arranca el pipeline completo de la tienda de zapatos:
+#   build -> PostgreSQL + Kafka -> seed (datos) -> batch (Bronze/Silver/Gold)
+#   -> streaming + eventos (Kafka) + dashboard (Streamlit)
+#
+# Uso:
+#   ./start              # arranque normal (reutiliza datos si ya existen)
+#   ./start --rebuild    # fuerza reconstrucción de la imagen
+#   ./start --reseed     # regenera los datos de ejemplo (borra data/raw)
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+REBUILD=0
+RESEED=0
+for arg in "$@"; do
+  case "$arg" in
+    --rebuild) REBUILD=1 ;;
+    --reseed)  RESEED=1 ;;
+    *) echo "Opción desconocida: $arg (usa --rebuild o --reseed)"; exit 1 ;;
+  esac
+done
+
+compose() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+  else
+    docker-compose "$@"
+  fi
+}
+
+echo "==> 1/6 Preparando directorios (data/raw, data/lake)"
+mkdir -p data/raw data/lake
+
+if [ "$RESEED" = "1" ]; then
+  echo "==> Borrando datos de ejemplo (--reseed)"
+  rm -rf data/raw data/lake
+  mkdir -p data/raw data/lake
+fi
+
+echo "==> 2/6 Construyendo imagen"
+if [ "$REBUILD" = "1" ]; then
+  compose build --no-cache
+else
+  compose build
+fi
+
+echo "==> 3/6 Levantando PostgreSQL y Kafka"
+compose up -d postgres kafka
+echo "    Esperando salud de los servicios..."
+for i in $(seq 1 60); do
+  pg=$(compose ps postgres --format '{{.Health}}' 2>/dev/null | head -1 || true)
+  kf=$(compose ps kafka    --format '{{.Health}}' 2>/dev/null | head -1 || true)
+  if [ "$pg" = "healthy" ] && [ "$kf" = "healthy" ]; then
+    break
+  fi
+  sleep 2
+done
+echo "    postgres=$pg kafka=$kf"
+
+echo "    Creando topic de Kafka si no existe"
+compose exec -T kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 --create --if-not-exists \
+  --topic eventos-web --partitions 1 --replication-factor 1 || true
+
+echo "==> 4/6 Generando datos de ejemplo (seed)"
+if [ -z "$(ls -A data/raw 2>/dev/null)" ]; then
+  compose --profile tools run --rm seed
+else
+  echo "    data/raw ya poblado — se omite (usa ./start --reseed para regenerar)"
+fi
+
+echo "==> 5/6 Ejecutando pipeline batch: Bronze -> Silver -> Gold"
+compose --profile tools run --rm batch
+
+echo "==> 6/6 Levantando servicios en segundo plano (streaming, eventos, dashboard)"
+compose up -d
+
+cat <<EOF
+
+=============================================
+ Pipeline arrancado correctamente
+=============================================
+ Dashboard:      http://localhost:8501
+ Spark UI:       http://localhost:4040   (streaming)
+ PostgreSQL:     localhost:5433  (db=tienda user=tienda)
+ Kafka (ext.):   localhost:29092  (topic=eventos-web)
+ Data lake:      ./data/lake/{bronze,silver,gold}
+
+ Útiles:
+   docker compose logs -f streaming    # ver el streaming
+   docker compose logs -f events       # ver el productor de eventos
+   docker compose --profile tools run --rm batch   # reejecutar batch
+   ./stop                              # parar todo
+=============================================
+EOF

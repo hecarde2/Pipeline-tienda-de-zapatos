@@ -1,0 +1,126 @@
+name: tienda-zapatos
+
+x-app: &app
+  build:
+    context: .
+  image: tienda-zapatos-pipeline:latest
+  environment: &app-env
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_NAME: tienda
+    DB_USER: tienda
+    DB_PASSWORD: tienda123
+    KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    KAFKA_TOPIC: eventos-web
+    LAKE_ROOT: /data/lake
+    RAW_ROOT: /data/raw
+    SPARK_DRIVER_MEMORY: 768m
+    STOCK_UMBRAL: "5"
+    TZ: Europe/Madrid
+  volumes:
+    - ./data:/data
+    - ./app:/app/app
+    - ./dashboard:/app/dashboard
+    - ./db:/app/db
+  networks:
+    - pipeline
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: tienda
+      POSTGRES_PASSWORD: tienda123
+      POSTGRES_DB: tienda
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tienda -d tienda"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - pipeline
+    restart: unless-stopped
+
+  kafka:
+    image: apache/kafka:3.7.2
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Q0
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    ports:
+      - "29092:29092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 20s
+    networks:
+      - pipeline
+    restart: unless-stopped
+
+  seed:
+    <<: *app
+    profiles: [tools]
+    command: ["python", "-m", "app.seed"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  batch:
+    <<: *app
+    profiles: [tools]
+    command: ["python", "-m", "app.batch"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  events:
+    <<: *app
+    command: ["python", "-m", "app.events"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  streaming:
+    <<: *app
+    command: ["python", "-m", "app.streaming"]
+    restart: unless-stopped
+    ports:
+      - "4040:4040"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  dashboard:
+    <<: *app
+    command: ["streamlit", "run", "dashboard/app.py", "--server.port", "8501", "--server.address", "0.0.0.0", "--server.headless", "true", "--browser.gatherUsageStats", "false"]
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+
+networks:
+  pipeline:

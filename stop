@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Para todos los servicios del pipeline.
+#
+# Uso:
+#   ./stop            # para servicios (conserva PostgreSQL y el data lake)
+#   ./stop --volumes  # además borra el volumen de PostgreSQL
+#   ./stop --purge    # además borra volumen, data/raw y data/lake
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+compose() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+  else
+    docker-compose "$@"
+  fi
+}
+
+case "${1:-}" in
+  --volumes)
+    compose --profile tools down --volumes
+    echo "==> Servicios parados y volúmenes eliminados."
+    ;;
+  --purge)
+    compose --profile tools down --volumes
+    rm -rf data/raw data/lake
+    echo "==> Servicios parados, volúmenes y datos eliminados."
+    ;;
+  *)
+    compose --profile tools down
+    echo "==> Servicios parados (datos conservados). Vuelve con ./start"
+    ;;
+esac
