@@ -1,8 +1,8 @@
 # `app/` — código del pipeline
 
 Módulos Python que implementan las tres capas del lake, el productor de
-eventos y el consumo de Kafka. Todos se ejecutan con
-`python -m app.<modulo>` dentro del contenedor.
+eventos, el consumo de Kafka y el consumo de una API REST externa. Todos se
+ejecutan con `python -m app.<modulo>` dentro del contenedor.
 
 ## Módulos de configuración y utilidades
 
@@ -11,6 +11,8 @@ Fuente única de configuración. Lee las variables de entorno y expone:
 
 - Conexión a PostgreSQL (`DB_*`) y JDBC para Spark.
 - Kafka (`KAFKA_BOOTSTRAP`, `KAFKA_TOPIC`, offsets iniciales).
+- API externa (`API_ENABLED`, `API_BASE_URL`, `API_RECURSO`, `API_CATEGORIAS`,
+  `API_PAGE_SIZE`, `API_TIMEOUT`, `API_REINTENTOS`, `API_TOKEN`…).
 - Rutas del lake: `bronze_path()`, `silver_path()`, `gold_path()`,
   `rejects_path()`, `checkpoint_path()`, `metadata_path()`.
 - Reglas de negocio: categorías, estados de pedido/pago, estados que cuentan
@@ -48,6 +50,24 @@ Genera todos los datos de entrada (ejecutable con `--force` para regenerar):
 4. **21 días de eventos de navegación** en JSON Lines con duplicados reales
    (para probar el dedupe de Silver y que el embudo tenga datos el primer día).
 
+## Consumo de API externa
+
+### `api.py`
+Ingesta el catálogo de zapatos de una API REST pública (por defecto
+[DummyJSON](https://dummyjson.com)) para contrastar el catálogo propio:
+
+- **Cliente** (`ApiClient`): `requests.Session` con reintentos y backoff
+  (429/5xx), timeout, cabeceras `Accept`/`User-Agent` y autenticación opcional
+  por cabecera (`API_TOKEN` → `Authorization: Bearer <token>`).
+- **Paginación real** por `limit`/`skip` sobre cada categoría
+  (`API_CATEGORIAS`, por defecto `mens-shoes,womens-shoes`), deteniéndose al
+  alcanzar el `total` que informa la API.
+- **Salida cruda** a `bronze/api_catalogo/<categoria>.jsonl` (JSON Lines, un
+  producto por línea) añadiendo solo `_source`, `_endpoint`, `_ingested_at` e
+  `_ingest_date`. Escritura idempotente (reemplaza la ingesta anterior).
+- `ingest_catalogo()` devuelve el nº de productos; ejecutable suelto con
+  `python -m app.api`.
+
 ## Capas del data lake
 
 ### `bronze.py`
@@ -59,9 +79,11 @@ Entrada cruda con metadatos:
   reemplaza únicamente la partición del día (reprocesable).
 - `ingest_historicos()` — copia literales de `data/raw/` a Bronze (CSV,
   JSON de proveedores, eventos históricos) y escribe un manifiesto.
+- `ingest_api()` — delega en `app.api` para consumir la API externa. Si no hay
+  red o la API falla, avisa y el pipeline continúa sin catálogo externo.
 
 ### `silver.py`
-Limpieza y validación (11 tablas). Helpers: `talla_estandar()` (normaliza
+Limpieza y validación (12 tablas). Helpers: `talla_estandar()` (normaliza
 `EU 36`/` T40 `/`36,5` → `40`), `fecha_multi()` (varios formatos de fecha) y
 `_precio()` (UDF pandas: `1.234,56` → `1234.56`). Por cada tabla:
 
@@ -72,11 +94,13 @@ Limpieza y validación (11 tablas). Helpers: `talla_estandar()` (normaliza
 - `silver_pedido_detalle` une pedidos + detalle + pagos + variantes en la
   vista consistente de un pedido.
 - `silver_eventos` lee Bronze (histórico + stream) y deduplica por `event_id`.
+- `silver_catalogo_externo` normaliza el catálogo de la API; devuelve `None`
+  (se omite) si no hubo ingesta.
 
 `run_silver(spark)` ejecuta todas y devuelve los conteos.
 
 ### `gold.py`
-Métricas de negocio (8 tablas batch), listas para consumo:
+Métricas de negocio (9 tablas batch), listas para consumo:
 
 | Tabla | Responde |
 |---|---|
@@ -88,6 +112,7 @@ Métricas de negocio (8 tablas batch), listas para consumo:
 | `gold_stock_critico` | variantes bajo el umbral y su valor de riesgo |
 | `gold_tasa_devolucion` | devoluciones por producto, % y motivo principal |
 | `gold_clientes_valor` | pedidos, gasto, ticket medio y segmento de clientes |
+| `gold_catalogo_externo` | benchmark de precios del catálogo de la API (opcional) |
 
 Las ventas unifican lo transaccional (pagos confirmados en estados de venta)
 con el histórico de CSV mediante una columna `fuente`.

@@ -1,8 +1,9 @@
 # 👟 Pipeline de Datos — Tienda de Zapatos Online
 
 Pipeline de datos completo sobre **arquitectura Medallion (Bronze → Silver → Gold)**
-con **Apache Spark**, combinando **batch** (PostgreSQL + archivos históricos) y
-**streaming** (Kafka), con un **dashboard en Streamlit** que consume las métricas Gold.
+con **Apache Spark**, combinando **batch** (PostgreSQL + archivos históricos +
+consumo de una **API REST externa**) y **streaming** (Kafka), con un
+**dashboard en Streamlit** que consume las métricas Gold.
 
 > Arranque en un solo comando: `./start`
 
@@ -49,7 +50,8 @@ proyecto:
 ```
                          ┌──────────────────────────────┐
    PostgreSQL (OLTP) ───▶│  BRONZE  (crudo + metadata)  │◀─── CSV/JSON históricos (data/raw)
-                         │  bronze/postgres/<tabla>/    │
+   API REST externa ────▶│  bronze/postgres/<tabla>/    │
+                         │  bronze/api_catalogo/*.jsonl │
                          │  bronze/historico_ventas/    │
                          └──────────────┬───────────────┘
                                         │ Spark (python -m app.batch)
@@ -61,7 +63,7 @@ proyecto:
                                         │
                          ┌──────────────▼───────────────┐
                          │  GOLD    (métricas de negocio)│──▶ dashboard Streamlit
-                         │  8 tablas de análisis batch   │
+                         │  9 tablas de análisis batch   │
                          └──────────────▲───────────────┘
                                         │
    Navegadores ──▶ Kafka ──▶ Spark Structured Streaming (python -m app.streaming)
@@ -70,7 +72,8 @@ proyecto:
                                 └──▶ gold_alertas  (stock bajo en vivo)
 ```
 
-- **Batch**: `seed` → `bronze` → `silver` → `gold` (se ejecuta con `./start`).
+- **Batch**: `seed` → `bronze` (PostgreSQL + históricos + API) → `silver` → `gold`
+  (se ejecuta con `./start`).
 - **Streaming**: Kafka → Structured Streaming → Bronze + Gold en vivo (servicio continuo).
 - Ambos comparten `lake/bronze/eventos_web/`, así que el batch incluye en Silver
   tanto los eventos históricos como los que llegan en vivo.
@@ -87,6 +90,7 @@ proyecto:
 | Base transaccional | PostgreSQL | 16 |
 | Mensajería | Apache Kafka (KRaft, single-node) | 3.7.2 |
 | Productor de eventos | confluent-kafka | 2.16.0 |
+| Consumo de API | requests | 2.32 |
 | Dashboard | Streamlit | 1.65 |
 | Almacenamiento | Parquet en FS local (rutas configurables a S3) | — |
 
@@ -107,16 +111,17 @@ Pipeline-tienda-de-zapatos/
 │   ├── schemas.py            # EVENT_SCHEMA compartido
 │   ├── spark_utils.py        # constructor de SparkSession (jars, heap, tz)
 │   ├── seed.py               # genera datos de ejemplo (PG + CSV/JSON/JSONL)
-│   ├── bronze.py             # PostgreSQL y archivos -> Bronze
+│   ├── api.py                # consume la API REST externa -> Bronze (JSON Lines)
+│   ├── bronze.py             # PostgreSQL, archivos y API -> Bronze
 │   ├── silver.py             # limpieza, validación, dedupe, rechazados
-│   ├── gold.py               # 8 tablas de métricas de negocio
+│   ├── gold.py               # 9 tablas de métricas de negocio
 │   ├── batch.py              # orquestador Bronze -> Silver -> Gold
 │   ├── events.py             # productor de eventos a Kafka (simulador web)
 │   └── streaming.py          # Kafka -> Bronze + Gold (Structured Streaming)
 ├── dashboard/
 │   ├── app.py                # página de inicio: KPIs, ventas y ejecuciones del batch
 │   ├── lib.py                # estilo blanco hueso, carga Gold, filtros y export CSV
-│   └── pages/                # Ventas · Producto · Clientes · Streaming
+│   └── pages/                # Ventas · Producto · Clientes · Streaming · Catálogo API
 ├── db/init/01_schema.sql     # esquema transaccional (initdb)
 └── data/                     # generado en runtime
     ├── raw/                  # archivos crudos (CSV, JSON, JSON Lines)
@@ -228,6 +233,7 @@ En DBeaver: *New Connection* → **PostgreSQL** → Host `localhost`, Port
 | `kafka` | apache/kafka:3.7.2 | Broker KRaft single-node, topic `eventos-web` |
 | `seed` *(tool)* | `python -m app.seed` | Genera datos: PG sucio a propósito + históricos CSV/JSON/JSONL |
 | `batch` *(tool)* | `python -m app.batch` | Ingesta a Bronze, transforma a Silver y calcula Gold |
+| `api` *(tool)* | `python -m app.api` | Consume la API externa y guarda el crudo en Bronze |
 | `events` | `python -m app.events` | Productor de eventos de navegación a Kafka |
 | `streaming` | `python -m app.streaming` | Spark Structured Streaming: Kafka → Bronze + Gold en vivo |
 | `dashboard` | `streamlit run dashboard/app.py` | Panel web sobre las tablas Gold |
@@ -244,14 +250,17 @@ En DBeaver: *New Connection* → **PostgreSQL** → Host `localhost`, Port
   reejecutable e idempotente sin borrar días anteriores.
 - `bronze/historico_ventas/`, `bronze/historico_devoluciones/`, `bronze/proveedores/`
   — copias literales de los archivos crudos.
+- `bronze/api_catalogo/<categoria>.jsonl` — catálogo de zapatos consumido de la
+  API externa, un producto crudo por línea (JSON Lines) + metadatos de ingesta.
 - `bronze/eventos_web/historico/` (JSON Lines) y `bronze/eventos_web/stream/`
   (micro-batches del streaming).
 
-### Silver — limpio y validado (11 tablas)
+### Silver — limpio y validado (12 tablas)
 `silver_clientes`, `silver_productos`, `silver_variantes`, `silver_inventario`,
 `silver_pedidos`, `silver_pedido_detalle` (pedidos + detalle + pagos),
 `silver_devoluciones`, `silver_historico_ventas`, `silver_historico_devoluciones`,
-`silver_proveedores`, `silver_eventos_navegacion`.
+`silver_proveedores`, `silver_eventos_navegacion`, `silver_catalogo_externo`
+(catálogo de la API, opcional).
 
 Reglas aplicadas:
 
@@ -267,7 +276,7 @@ Reglas aplicadas:
 - **Consistencia**: `silver_pedido_detalle` une pedidos + detalle + pagos + variantes
   en una única vista de pedido.
 
-### Gold — métricas para el negocio (8 tablas batch + 2 streaming)
+### Gold — métricas para el negocio (9 tablas batch + 2 streaming)
 
 | Tabla | Qué responde |
 |---|---|
@@ -279,11 +288,35 @@ Reglas aplicadas:
 | `gold_stock_critico` | Variantes con stock ≤ umbral y valor de riesgo |
 | `gold_tasa_devolucion` | Devoluciones por producto, % y motivo más frecuente |
 | `gold_clientes_valor` | Frecuencia, gasto, ticket medio y segmento de clientes |
+| `gold_catalogo_externo` | Benchmark de precios del catálogo de la API externa *(opcional)* |
 | `gold_actividad_stream` | Eventos y sesiones por tipo *(streaming)* |
 | `gold_alertas` | Alertas `stock_low` con severidad *(streaming)* |
 
 Ventas = pedidos en estados `confirmado/enviado/entregado` con pago confirmado
 + histórico de CSV, unificados con una columna `fuente`.
+
+---
+
+## 🔌 Consumo de API externa
+
+El batch consume además una **API REST pública** ([DummyJSON](https://dummyjson.com))
+para incorporar un catálogo de zapatos externo y contrastarlo con el propio:
+
+- **Cliente HTTP** (`app/api.py`) con `requests`: reintentos con backoff
+  (429/5xx), timeout y cabeceras; autenticación opcional
+  `Authorization: Bearer <API_TOKEN>`.
+- **Paginación real** por `limit`/`skip` sobre las categorías configuradas
+  (`API_CATEGORIAS`, por defecto `mens-shoes,womens-shoes`).
+- El crudo se guarda en `bronze/api_catalogo/<categoria>.jsonl` (JSON Lines +
+  metadatos), Silver lo normaliza (`silver_catalogo_externo`) y Gold publica
+  `gold_catalogo_externo` (benchmark de precios por categoría/marca).
+- **Degradación elegante**: si no hay red, la ingesta avisa y el batch continúa
+  sin catálogo externo (`API_ENABLED=0` lo desactiva del todo).
+
+```bash
+# Ejecutar solo la ingesta de la API
+docker compose --profile tools run --rm api
+```
 
 ---
 
@@ -313,7 +346,7 @@ docker compose --profile tools run --rm batch   # incorporar eventos a Silver/Go
 ## 📊 Dashboard
 
 `http://localhost:8501` — Streamlit leyendo solo de `lake/gold/` (Parquet → pandas),
-con **5 páginas** (menú lateral):
+con **6 páginas** (menú lateral):
 
 | Página | Contenido |
 |---|---|
@@ -322,6 +355,7 @@ con **5 páginas** (menú lateral):
 | **Producto** | Top productos con filtro de marca/categoría, tallas y colores, stock crítico y devoluciones |
 | **Clientes** | Clientes más valiosos con filtro por segmento y carritos abandonados |
 | **Streaming** | Actividad del stream y alertas de stock con severidad |
+| **Catálogo API** | Benchmark del catálogo externo (precios por categoría/marca) |
 
 Todas las tablas tienen botón **Descargar CSV** y la cabecera se actualiza sola
 cada 30 s (`AUTO_REFRESH=0` lo desactiva, `REFRESH_SECONDS` cambia la cadencia).
@@ -342,6 +376,12 @@ Todas tienen valor por defecto; se pueden sobrescribir en `docker-compose.yml`:
 | `KAFKA_STARTING_OFFSETS` | `latest` | Offset inicial del streaming |
 | `LAKE_ROOT` | `/data/lake` | Raíz del data lake (local o `s3a://bucket/lake`) |
 | `RAW_ROOT` | `/data/raw` | Raíz de archivos crudos |
+| `API_ENABLED` | `1` | Activa el consumo de la API externa |
+| `API_BASE_URL` | `https://dummyjson.com` | Base de la API |
+| `API_CATEGORIAS` | `mens-shoes,womens-shoes` | Categorías a ingerir |
+| `API_PAGE_SIZE` | `10` | Tamaño de página (paginación `limit`/`skip`) |
+| `API_TOKEN` | *(vacío)* | Token opcional (`Authorization: Bearer …`) |
+| `API_TIMEOUT` / `API_REINTENTOS` | `15` / `3` | Timeout y reintentos HTTP |
 | `STOCK_UMBRAL` | `5` | Umbral de stock crítico |
 | `SPARK_DRIVER_MEMORY` | `768m` | Heap del driver Spark |
 | `STREAM_TRIGGER` | `10 seconds` | Cadencia de micro-batches |
@@ -368,6 +408,9 @@ docker compose --profile tools run --rm batch
 docker compose --profile tools run --rm batch python -m app.bronze
 docker compose --profile tools run --rm batch python -m app.silver
 docker compose --profile tools run --rm batch python -m app.gold
+
+# Solo la ingesta de la API externa
+docker compose --profile tools run --rm api
 
 # Regenerar el seed
 docker compose --profile tools run --rm seed --force
@@ -438,3 +481,15 @@ docker exec -it tienda-zapatos-kafka-1 \
 - **21 días de eventos de navegación** (22 archivos JSON Lines, ~11.500 eventos)
   con duplicados reales (el embudo y los carritos abandonados tienen datos desde
   el primer batch).
+- **Catálogo externo** de ~10 zapatos consumido de la API (DummyJSON) en cada
+  ejecución del batch, si hay salida a Internet.
+
+---
+
+## 🧾 Problemas frecuentes con la API
+
+| Síntoma | Causa / solución |
+|---|---|
+| `[api] Error al consumir la API` / página Catálogo API vacía | Sin salida a Internet o la API no responde; el batch continúa sin catálogo externo. Revisa red o `API_BASE_URL` |
+| No quieres consumir la API | Arranca con `API_ENABLED=0` |
+| La API pide autenticación | Define `API_TOKEN` (se envía como `Authorization: Bearer …`) |

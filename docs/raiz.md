@@ -56,7 +56,7 @@ imagen.
 ## Orquestación de servicios
 
 ### `docker-compose.yml`
-Define la red y los 7 servicios:
+Define la red y los 8 servicios:
 
 | Servicio | Perfil | Rol |
 |---|---|---|
@@ -66,12 +66,13 @@ Define la red y los 7 servicios:
 | `streaming` | principal | Spark Structured Streaming (Spark UI en **4040**) |
 | `dashboard` | principal | Streamlit en **8501** |
 | `seed` | `tools` | Generador de datos de ejemplo |
-| `batch` | `tools` | Pipeline Bronze → Silver → Gold |
+| `batch` | `tools` | Pipeline Bronze → Silver → Gold (incluye el consumo de la API) |
+| `api` | `tools` | Consumo de la API REST externa → Bronze |
 
 Todos los servicios Python comparten el ancla `x-app`: misma imagen, mismas
-variables de entorno (credenciales, topic, rutas del lake, umbral de stock) y
-los volúmenes `./data:/data`, `./app:/app/app`, `./dashboard:/app/dashboard`,
-`./db:/app/db`.
+variables de entorno (credenciales, topic, rutas del lake, umbral de stock,
+API externa) y los volúmenes `./data:/data`, `./app:/app/app`,
+`./dashboard:/app/dashboard`, `./db:/app/db`.
 
 ## Configuración auxiliar
 

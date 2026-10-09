@@ -17,6 +17,10 @@ x-app: &app
     SPARK_DRIVER_MEMORY: 768m
     STOCK_UMBRAL: "5"
     TZ: Europe/Madrid
+    API_ENABLED: "1"
+    API_BASE_URL: https://dummyjson.com
+    API_CATEGORIAS: mens-shoes,womens-shoes
+    API_PAGE_SIZE: "10"
   volumes:
     - ./data:/data
     - ./app:/app/app
@@ -88,6 +92,14 @@ services:
     <<: *app
     profiles: [tools]
     command: ["python", "-m", "app.batch"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    profiles: [tools]
+    command: ["python", "-m", "app.api"]
     depends_on:
       postgres:
         condition: service_healthy

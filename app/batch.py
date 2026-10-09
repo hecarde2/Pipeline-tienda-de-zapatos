@@ -56,7 +56,9 @@ def main() -> int:
     spark = get_spark("batch-pipeline")
     try:
         registro["bronze"] = (
-            bronze.ingest_postgres(spark) + bronze.ingest_historicos()
+            bronze.ingest_postgres(spark)
+            + bronze.ingest_historicos()
+            + bronze.ingest_api()
         )
         registro["silver"] = silver.run_silver(spark)
         registro["gold"] = gold.run_gold(spark)

@@ -28,6 +28,30 @@ KAFKA_STARTING_OFFSETS = os.environ.get("KAFKA_STARTING_OFFSETS", "latest")
 LAKE_ROOT = Path(os.environ.get("LAKE_ROOT", "/data/lake"))
 RAW_ROOT = Path(os.environ.get("RAW_ROOT", "/data/raw"))
 
+# --- API externa (catálogo de zapatos) --------------------------------------
+# Consumo de una API REST pública (DummyJSON) para enriquecer el catálogo.
+# Todo configurable; autenticación opcional por cabecera Bearer.
+API_ENABLED = os.environ.get("API_ENABLED", "1") == "1"
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://dummyjson.com").rstrip("/")
+API_RECURSO = os.environ.get("API_RECURSO", "products/category")
+API_CATEGORIAS = tuple(
+    c.strip() for c in os.environ.get(
+        "API_CATEGORIAS", "mens-shoes,womens-shoes"
+    ).split(",") if c.strip()
+)
+API_PAGE_SIZE = int(os.environ.get("API_PAGE_SIZE", "10"))
+API_MAX_PAGINAS = int(os.environ.get("API_MAX_PAGINAS", "20"))
+API_TIMEOUT = float(os.environ.get("API_TIMEOUT", "15"))
+API_REINTENTOS = int(os.environ.get("API_REINTENTOS", "3"))
+API_TOKEN = os.environ.get("API_TOKEN", "")
+API_AUTH_HEADER = os.environ.get("API_AUTH_HEADER", "Authorization")
+API_AUTH_PREFIX = os.environ.get("API_AUTH_PREFIX", "Bearer")
+API_USER_AGENT = os.environ.get("API_USER_AGENT", "tienda-zapatos-pipeline/1.0")
+API_SELECT = os.environ.get(
+    "API_SELECT",
+    "id,title,brand,category,price,discountPercentage,rating,stock,sku,tags,description,availabilityStatus,thumbnail",
+)
+
 # --- Reglas de negocio ------------------------------------------------------
 STOCK_UMBRAL = int(os.environ.get("STOCK_UMBRAL", "5"))
 EMAIL_REGEX = r"^[^@\s]+@[^@\s]+\.[a-zA-Z]{2,}$"
@@ -70,6 +94,7 @@ SILVER_TABLES = (
     "silver_historico_devoluciones",
     "silver_proveedores",
     "silver_eventos_navegacion",
+    "silver_catalogo_externo",
 )
 
 GOLD_TABLES = (
@@ -83,6 +108,7 @@ GOLD_TABLES = (
     "gold_clientes_valor",
     "gold_alertas",
     "gold_actividad_stream",
+    "gold_catalogo_externo",
 )
 
 

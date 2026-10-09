@@ -10,6 +10,7 @@
 | gold_stock_critico        | Variantes con poco inventario                   |
 | gold_tasa_devolucion      | Productos con más devoluciones y sus motivos    |
 | gold_clientes_valor       | Clientes frecuentes, ticket promedio            |
+| gold_catalogo_externo     | Benchmark de precios del catálogo de la API     |
 
 Uso:  python -m app.gold
 """
@@ -391,6 +392,28 @@ def gold_clientes_valor(spark) -> DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# 9. gold_catalogo_externo
+# ---------------------------------------------------------------------------
+
+def gold_catalogo_externo(spark) -> DataFrame:
+    """Benchmark del catálogo consumido de la API externa por categoría y marca."""
+    cat = _read_silver(spark, "silver_catalogo_externo")
+    return (
+        cat
+        .groupBy("categoria_origen", "categoria", "marca")
+        .agg(
+            F.count("*").alias("productos"),
+            F.round(F.avg("precio"), 2).alias("precio_medio"),
+            F.round(F.min("precio"), 2).alias("precio_min"),
+            F.round(F.max("precio"), 2).alias("precio_max"),
+            F.round(F.avg("rating"), 2).alias("rating_medio"),
+            F.sum("stock").alias("stock_total"),
+        )
+        .orderBy(F.col("productos").desc(), F.col("categoria").asc())
+    )
+
+
+# ---------------------------------------------------------------------------
 # Orquestador
 # ---------------------------------------------------------------------------
 
@@ -403,12 +426,21 @@ BUILDERS = {
     "gold_stock_critico": gold_stock_critico,
     "gold_tasa_devolucion": gold_tasa_devolucion,
     "gold_clientes_valor": gold_clientes_valor,
+    "gold_catalogo_externo": gold_catalogo_externo,
 }
+
+# Tablas que dependen de la ingesta de la API: si no hay datos, se omiten.
+OPTIONAL_BUILDERS = {"gold_catalogo_externo"}
 
 
 def run_gold(spark) -> dict:
     conteos = {}
     for nombre, builder in BUILDERS.items():
+        if nombre in OPTIONAL_BUILDERS and not config.silver_path(
+            "silver_catalogo_externo"
+        ).exists():
+            print(f"[gold] {nombre}: omitido (sin catálogo de la API externa)")
+            continue
         df = builder(spark).repartition(1)
         df.write.mode("overwrite").parquet(config.spath(config.gold_path(nombre)))
         conteos[nombre] = spark.read.parquet(config.spath(config.gold_path(nombre))).count()

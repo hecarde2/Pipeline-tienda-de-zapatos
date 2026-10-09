@@ -34,6 +34,7 @@ capa, coloreada por `ok`/`error`).
 | `2_Producto.py` | Producto | Top productos con filtro de marca/categoría, ingresos por categoría, tallas y colores, stock crítico y devoluciones (todos con CSV) |
 | `3_Clientes.py` | Clientes | KPIs de clientes con filtro por segmento, gasto por segmento, ranking y carritos abandonados (CSV) |
 | `4_Streaming.py` | Streaming | KPIs de eventos y alertas, actividad del stream y alertas de stock coloreadas por severidad (CSV) |
+| `5_Catalogo_API.py` | Catálogo API | Benchmark del catálogo consumido de la API externa: KPIs, precios por categoría/marca y gráfico (CSV) |
 
 Streamlit genera el menú lateral automáticamente desde `pages/`. El menú es
 **permanente**: se fuerza `initial_sidebar_state="expanded"`, en escritorio se

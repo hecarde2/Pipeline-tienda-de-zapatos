@@ -20,12 +20,12 @@ Pipeline-tienda-de-zapatos/
 │
 ├── start, stop            →  orquestación local (ver raiz.md)
 ├── Dockerfile             →  imagen única con Spark + jars + Streamlit
-├── docker-compose.yml     →  7 servicios (ver raiz.md)
+├── docker-compose.yml     →  8 servicios (ver raiz.md)
 ├── requirements.txt       →  dependencias Python pinneadas
 ├── entrypoint.sh          →  resuelve JAVA_HOME antes de arrancar
 ├── streamlit-config.toml  →  tema visual del dashboard (blanco hueso)
 │
-├── app/                   →  ELT batch + streaming (ver app.md)
+├── app/                   →  ELT batch + API + streaming (ver app.md)
 ├── dashboard/             →  métricas Gold en Streamlit (ver dashboard.md)
 ├── db/                    →  esquema PostgreSQL (ver db.md)
 ├── data/                  →  generado en runtime (ver data.md)
@@ -37,7 +37,8 @@ Pipeline-tienda-de-zapatos/
 ## Flujo de datos en una frase
 
 `app/seed.py` genera datos de ejemplo en PostgreSQL y `data/raw/` →
-`app/batch.py` los ingiere a **Bronze**, los limpia en **Silver** y calcula las
-métricas de **Gold** → `dashboard/app.py` las muestra; en paralelo,
-`app/events.py` publica eventos a Kafka y `app/streaming.py` los consume para
-alimentar Bronze y las tablas Gold en vivo.
+`app/batch.py` (que además consume la API externa con `app/api.py`) los ingiere
+a **Bronze**, los limpia en **Silver** y calcula las métricas de **Gold** →
+`dashboard/app.py` las muestra; en paralelo, `app/events.py` publica eventos a
+Kafka y `app/streaming.py` los consume para alimentar Bronze y las tablas Gold
+en vivo.

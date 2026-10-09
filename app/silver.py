@@ -356,6 +356,46 @@ def silver_eventos(spark) -> DataFrame:
     )
 
 
+def silver_catalogo_externo(spark) -> DataFrame | None:
+    """Catálogo de zapatos consumido de la API externa (bronze/api_catalogo).
+
+    Devuelve None si aún no se ha ingerido nada (la API es opcional y el batch
+    debe funcionar sin conexión)."""
+    path = config.bronze_path("api_catalogo")
+    if not path.exists() or not any(path.glob("*.jsonl")):
+        return None
+    df = spark.read.json(config.spath(path))
+    limpio = (
+        df
+        .withColumn("api_id", F.col("id").cast("int"))
+        .withColumn("titulo", F.trim(F.col("title")))
+        .withColumn("marca", F.initcap(F.lower(F.trim(F.col("brand")))))
+        .withColumn("categoria", F.lower(F.trim(F.col("category"))))
+        .withColumn("precio", F.col("price").cast("double"))
+        .withColumn("descuento_pct", F.col("discountPercentage").cast("double"))
+        .withColumn("rating", F.col("rating").cast("double"))
+        .withColumn("stock", F.col("stock").cast("int"))
+        .withColumn("sku", F.upper(F.trim(F.col("sku"))))
+        .withColumn("etiquetas", F.concat_ws(",", F.col("tags")))
+    )
+    valido = (
+        (F.col("precio") > 0)
+        & F.col("titulo").isNotNull() & (F.col("titulo") != "")
+        & F.col("sku").isNotNull() & (F.col("sku") != "")
+    )
+    validos = limpio.filter(valido)
+    invalidos = limpio.filter(~valido)
+    _write_rejects(invalidos.select(
+        "api_id", "titulo", "marca", "precio", "sku",
+        F.lit("catalogo_api_invalido").alias("motivo_rechazo")), "catalogo_externo")
+    return validos.select(
+        "api_id", "titulo", "marca", "categoria", "precio", "descuento_pct",
+        "rating", "stock", "sku", "etiquetas",
+        F.col("_categoria_api").alias("categoria_origen"),
+        "_source", "_ingested_at",
+    )
+
+
 # ---------------------------------------------------------------------------
 # UDF de precio (se crea bajo demanda: el decorador necesita Spark activo)
 # ---------------------------------------------------------------------------
@@ -409,6 +449,7 @@ def run_silver(spark) -> dict:
     hist_dev = silver_historico_devoluciones(spark)
     proveedores = silver_proveedores(spark)
     eventos = silver_eventos(spark)
+    catalogo = silver_catalogo_externo(spark)
 
     tablas = {
         "silver_clientes": clientes,
@@ -423,6 +464,10 @@ def run_silver(spark) -> dict:
         "silver_proveedores": proveedores,
         "silver_eventos_navegacion": eventos,
     }
+    if catalogo is not None:
+        tablas["silver_catalogo_externo"] = catalogo
+    else:
+        print("[silver] silver_catalogo_externo: omitido (sin ingesta de la API)")
     conteos = {}
     for nombre, df in tablas.items():
         out = df.repartition(1)

@@ -5,6 +5,8 @@
   Se reemplaza únicamente la partición del día (reprocesable e idempotente).
 - Archivos históricos (CSV/JSON) -> bronze/historico_ventas/, bronze/historico_devoluciones/,
   bronze/proveedores/ conservando el formato original.
+- API REST externa (catálogo de zapatos) -> bronze/api_catalogo/<categoria>.jsonl
+  (JSON Lines crudo + metadatos de ingesta).
 - Los eventos de Kafka entran por streaming (app.streaming) en bronze/eventos_web/.
 
 Uso:  python -m app.bronze
@@ -77,6 +79,25 @@ def ingest_historicos() -> int:
     return copiados
 
 
+def ingest_api() -> int:
+    """Consume la API externa y guarda el crudo en bronze/api_catalogo/.
+
+    Si la API no está disponible (sin red, timeout, HTTP de error...) se avisa
+    y el pipeline continúa sin catálogo externo, en lugar de abortar el batch.
+    """
+    from app import api
+
+    try:
+        return api.ingest_catalogo()
+    except Exception as exc:  # noqa: BLE001 - la ingesta batch no debe caerse
+        print(
+            f"[bronze] API externa no disponible ({type(exc).__name__}: {exc}); "
+            "se continúa sin catálogo externo",
+            file=sys.stderr,
+        )
+        return 0
+
+
 def main() -> int:
     if not (config.RAW_ROOT / "historico_ventas").exists():
         print("[bronze] No existe data/raw — ejecuta antes: python -m app.seed", file=sys.stderr)
@@ -85,6 +106,7 @@ def main() -> int:
     try:
         ingest_postgres(spark)
         ingest_historicos()
+        ingest_api()
         print("[bronze] OK")
         return 0
     finally:

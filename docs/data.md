@@ -34,13 +34,15 @@ Regenerar todo: `./start --reseed`.
   la partición del día (idempotente).
 - `historico_ventas/`, `historico_devoluciones/`, `proveedores/` — copias
   literales de `data/raw/`.
+- `api_catalogo/<categoria>.jsonl` — catálogo de zapatos consumido de la API
+  externa, un producto crudo por línea (JSON Lines) + metadatos de ingesta.
 - `eventos_web/historico/` — eventos históricos copiados por el batch.
 - `eventos_web/stream/` — micro-batches que escribe el streaming desde Kafka.
 - `_manifiesto.json` — registro de la última ingesta de archivos.
 
 ## `data/lake/silver/` — capaSilver (limpio)
 
-11 tablas Parquet con dedupe, estandarización y validación aplicadas
+12 tablas Parquet con dedupe, estandarización y validación aplicadas
 (ver [../docs/app.md](../docs/app.md)). Además:
 
 ```
@@ -60,11 +62,12 @@ auditarlos.
 
 10 tablas Parquet listas para el dashboard:
 
-- **8 de batch** (`gold_ventas_diarias`, `gold_top_productos`,
+- **9 de batch** (`gold_ventas_diarias`, `gold_top_productos`,
   `gold_ventas_por_talla`, `gold_embudo_conversion`,
   `gold_carritos_abandonados`, `gold_stock_critico`, `gold_tasa_devolucion`,
-  `gold_clientes_valor`) — las escribe `app/batch.py` con reescritura
-  completa.
+  `gold_clientes_valor`, `gold_catalogo_externo`) — las escribe `app/batch.py`
+  con reescritura completa. `gold_catalogo_externo` solo se genera si hubo
+  ingesta de la API externa.
 - **2 de streaming** (`gold_actividad_stream`, `gold_alertas`) — las escribe
   `app/streaming.py` en modo append; el batch no las toca.
 
